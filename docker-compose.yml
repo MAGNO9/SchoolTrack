@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:6.0
+    container_name: schooltrack-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: schooltrack
+    volumes:
+      - mongodb_data:/data/db
+      - ./backend/src/seeds:/docker-entrypoint-initdb.d
+    networks:
+      - schooltrack-network
+
+  # Redis (optional, for caching)
+  redis:
+    image: redis:7-alpine
+    container_name: schooltrack-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - schooltrack-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: schooltrack-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      MONGODB_URI: mongodb://admin:admin123@mongodb:27017/schooltrack?authSource=admin
+      JWT_SECRET: your_super_secret_jwt_key_here
+      JWT_EXPIRE: 7d
+      REDIS_URL: redis://redis:6379
+      FRONTEND_URL: http://localhost:8080
+      # Add your API keys here
+      MAPTILER_API_KEY: your_maptiler_api_key
+      GRAPHHOPPER_API_KEY: your_graphhopper_api_key
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - schooltrack-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: schooltrack-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_ENV: development
+      VUE_APP_API_URL: http://localhost:3000/api
+      VUE_APP_SOCKET_URL: http://localhost:3000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - schooltrack-network
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  schooltrack-network:
+    driver: bridge

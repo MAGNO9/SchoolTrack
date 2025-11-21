@@ -1,7 +1,9 @@
+// backend/src/routes/routes.js (COMPLETO Y CORREGIDO)
 const express = require('express');
 const router = express.Router();
 const routeController = require('../controllers/routeController');
-const { protect } = require('../middleware/authMiddleware');
+// --- CORRECCIÓN 1: Importar authorize ---
+const { protect, authorize } = require('../middleware/authMiddleware');
 const { body } = require('express-validator');
 
 // Validaciones
@@ -10,18 +12,24 @@ const routeValidation = [
   body('code').trim().isLength({ min: 1 }).withMessage('El código es requerido'),
   body('school.name').trim().isLength({ min: 1 }).withMessage('El nombre de la escuela es requerido'),
   body('school.address').trim().isLength({ min: 1 }).withMessage('La dirección de la escuela es requerida'),
-  body('school.coordinates.latitude').isFloat({ min: -90, max: 90 }).withMessage('Latitud de escuela inválida'),
-  body('school.coordinates.longitude').isFloat({ min: -180, max: 180 }).withMessage('Longitud de escuela inválida')
+  // --- CORRECCIÓN 2: Validar Coordenadas GeoJSON [Lng, Lat] ---
+  body('school.coordinates.coordinates.0').isFloat({ min: -180, max: 180 }).withMessage('Longitud inválida'),
+  body('school.coordinates.coordinates.1').isFloat({ min: -90, max: 90 }).withMessage('Latitud inválida')
 ];
+
+// --- CORRECCIÓN 3: Definir roles de admin ---
+const adminRoles = ['admin', 'school_admin'];
 
 // Rutas
 router.get('/', protect, routeController.getAllRoutes);
 router.get('/active', protect, routeController.getActiveRoutes);
 router.get('/:id', protect, routeController.getRouteById);
-router.post('/', protect, routeValidation, routeController.createRoute);
-router.put('/:id', protect, routeValidation, routeController.updateRoute);
-router.delete('/:id', protect, routeController.deleteRoute);
-router.post('/:id/assign-vehicle', protect, routeController.assignVehicle);
-router.delete('/:id/remove-vehicle', protect, routeController.removeVehicle);
+
+// --- CORRECCIÓN 4: Añadir authorize a rutas de escritura ---
+router.post('/', protect, authorize(adminRoles), routeValidation, routeController.createRoute);
+router.put('/:id', protect, authorize(adminRoles), routeValidation, routeController.updateRoute);
+router.delete('/:id', protect, authorize(adminRoles), routeController.deleteRoute);
+router.post('/:id/assign-vehicle', protect, authorize(adminRoles), routeController.assignVehicle);
+router.delete('/:id/remove-vehicle', protect, authorize(adminRoles), routeController.removeVehicle);
 
 module.exports = router;

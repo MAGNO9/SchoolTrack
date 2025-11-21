@@ -1,26 +1,38 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const connectDB = async () => {
   try {
-    const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/schooltrack';
+    // Usar MONGODB_URI (de Render) primero, luego MONGO_URI como fallback
+    const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+
+    if (!uri) {
+      console.warn('⚠️ Aviso: MONGODB_URI o MONGO_URI no están definidas.');
+      console.warn('   El servidor arrancará en modo degradado sin conexión a DB.');
+      console.warn('   Para habilitar la DB, añade MONGODB_URI en las variables de entorno.');
+      return null;
+    }
+
     const conn = await mongoose.connect(uri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
     });
 
     console.log(`✅ MongoDB conectado en: ${conn.connection.host}`);
+    console.log(`   Base de datos: ${conn.connection.name}`);
 
-    mongoose.connection.on('error', (err) => {
-      console.error('❌ Error de conexión MongoDB:', err);
-    });
-
-    mongoose.connection.on('disconnected', () => {
-      console.log('⚠️ MongoDB desconectado');
-    });
+    return conn;
   } catch (error) {
-    console.error('❌ Error conectando MongoDB:', error.message);
-    process.exit(1);
+    console.error(`❌ Error conectando MongoDB:`);
+    console.error(`   ${error.message}`);
+
+    if (error.message && error.message.includes('ECONNREFUSED')) {
+      console.error(`   💡 MongoDB no está ejecutándose localmente`);
+      console.error(`   💡 Si necesitas DB, configura MONGODB_URI en Render`);
+    }
+
+    console.warn('⚠️ Continuando sin conexión a la base de datos (modo degradado).');
+    return null;
   }
 };
 
-module.exports = connectDB;
+export default connectDB;

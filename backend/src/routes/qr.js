@@ -1,45 +1,48 @@
-const express = require('express');
+import express from 'express';
+import {
+  generateQR,
+  validateQR,
+  checkInWithQR,
+  getQRDetails,
+  getQRByTrip,
+  getAllQRCodes,
+  voidQRCode
+} from '../controllers/qrController.js';
+import { protect, authorize } from '../middleware/authMiddleware.js';
+
 const router = express.Router();
-const qrController = require('../controllers/qrController');
-const { protect, authorize } = require('../middleware/authMiddleware');
-const { validateObjectId } = require('../middleware/validate');
 
-// Generar código QR para estudiante
-router.post('/student/:studentId/generate', 
-  protect,
-  authorize('admin', 'school_admin'),
-  validateObjectId('studentId'),
-  qrController.generateStudentQR
-);
+// ========================================
+// Rutas públicas para validación
+// ========================================
 
-// Generar código QR para conductor
-router.post('/driver/:driverId/generate', 
-  protect,
-  authorize('admin', 'school_admin'),
-  validateObjectId('driverId'),
-  qrController.generateDriverQR
-);
+// GET validar QR
+router.get('/validate/:code', validateQR);
 
-// Escanear código QR de estudiante
-router.post('/student/scan', 
-  protect,
-  authorize('driver'),
-  qrController.scanStudentQR
-);
+// ========================================
+// Rutas protegidas
+// ========================================
 
-// Escanear código QR de conductor
-router.post('/driver/scan', 
-  protect,
-  authorize('driver'),
-  qrController.scanDriverQR
-);
+// GET generar QR para un viaje
+router.get('/generate/:tripId', protect, authorize('admin', 'driver'), generateQR);
 
-// Obtener estudiantes en un vehículo
-router.get('/vehicle/:vehicleId/students', 
-  protect,
-  authorize('admin', 'school_admin', 'driver'),
-  validateObjectId('vehicleId'),
-  qrController.getStudentsInVehicle
-);
+// POST check-in con QR
+router.post('/checkin', protect, checkInWithQR);
 
-module.exports = router;
+// GET detalles de QR
+router.get('/:code/details', protect, getQRDetails);
+
+// GET QR por viaje
+router.get('/trip/:tripId', protect, getQRByTrip);
+
+// ========================================
+// Rutas admin
+// ========================================
+
+// GET todos los QRs
+router.get('/', protect, authorize('admin'), getAllQRCodes);
+
+// POST marcar QR como voided
+router.post('/:code/void', protect, authorize('admin'), voidQRCode);
+
+export default router;

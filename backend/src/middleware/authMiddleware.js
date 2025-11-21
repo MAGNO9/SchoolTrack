@@ -1,46 +1,119 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
 
-const protect = async (req, res, next) => {
+/**
+ * Middleware de protección con JWT
+ * Verifica que el token sea válido y obtiene el usuario
+ */
+export const protect = async (req, res, next) => {
   let token;
 
-  // 1. Leer el token del header
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-    try {
-      // 2. Obtener el token (sin el "Bearer ")
+  try {
+    // 1. Leer el token del header
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
-
-      // 3. Verificar el token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'changeme_in_prod');
-
-      // 4. Obtener el usuario del token y adjuntarlo a 'req'
-      // Excluimos el password del objeto que adjuntamos
-      req.user = await User.findById(decoded.id).select('-password');
-
-      if (!req.user) {
-         return res.status(401).json({ message: 'No autorizado, usuario no encontrado' });
-      }
-
-      next(); // Continuar al siguiente middleware/controlador
-    } catch (error) {
-      console.error('Error de autenticación:', error.message);
-      return res.status(401).json({ message: 'No autorizado, token inválido' });
     }
-  }
 
-  if (!token) {
-    return res.status(401).json({ message: 'No autorizado, token faltante' });
+    // 2. Verificar que el token existe
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No autorizado: Token faltante'
+      });
+    }
+
+    // 3. Verificar el token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'changeme_in_prod');
+
+    // 4. Obtener el usuario
+    req.user = await User.findById(decoded.id).select('-password');
+
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'No autorizado: Usuario no encontrado'
+      });
+    }
+
+    // 5. Verificar si el usuario está activo
+    if (req.user.status === 'inactive') {
+      return res.status(403).json({
+        success: false,
+        message: 'Acceso denegado: Usuario inactivo'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('❌ Error de autenticación:', error.message);
+
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Token expirado'
+      });
+    }
+
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Token inválido'
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      message: 'No autorizado'
+    });
   }
 };
 
-// Opcional: Middleware para restringir por rol
-const authorize = (...roles) => {
+/**
+ * Middleware para autorizar por rol
+ */
+export const authorize = (...roles) => {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      return res.status(403).json({ message: 'Acceso prohibido: Rol no autorizado' });
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'No autenticado'
+      });
     }
+
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: `Acceso denegado: Se requiere rol de ${roles.join(' o ')}`
+      });
+    }
+
     next();
   };
 };
 
-module.exports = { protect, authorize };
+/**
+ * Middleware para verificar si es el mismo usuario o admin
+ */
+export const checkOwnerOrAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'No autenticado'
+    });
+  }
+
+  const userId = req.params.id || req.params.userId;
+  const isOwner = req.user._id.toString() === userId;
+  const isAdmin = req.user.role === 'admin';
+
+  if (!isOwner && !isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: 'No tienes permiso para acceder a este recurso'
+    });
+  }
+
+  next();
+};
+
+export default { protect, authorize, checkOwnerOrAdmin };

@@ -1,34 +1,77 @@
-// ===============================================
-//   qrController.js (COMPLETO Y CORREGIDO)
-// ===============================================
+import QRCode from 'qrcode';
+import QRCodeModel from '../models/QRCode.js';
+import Trip from '../models/Trip.js';
+import TripCheckin from '../models/TripCheckin.js';
+import Student from '../models/Student.js';
+import User from '../models/User.js';
+import Vehicle from '../models/Vehicle.js';
+import Route from '../models/Route.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
 
-const Student = require('../models/Student');
-const User = require('../models/User');
-const Vehicle = require('../models/Vehicle');
-const Route = require('../models/Route');
-// ASUMO que tienes un helper para generar el QR, si no, esto dará error.
-// const { generateQRCode } = require('../utils/helpers'); 
+/**
+ * @desc    Generar QR para un viaje
+ * @route   GET /api/qr/generate/:tripId
+ * @access  Private/Admin/Driver
+ */
+export const generateQR = asyncHandler(async (req, res) => {
+  const { tripId } = req.params;
 
-// ======================================
-//  INICIO DE LA CORRECCIÓN
-// ======================================
-// Definimos las funciones como constantes locales
-// en lugar de "exports.generateStudentQR"
+  const trip = await Trip.findById(tripId).populate('route vehicle driver');
 
-const generateStudentQR = async (req, res) => {
-  try {
-    const { studentId } = req.params;
-    
-    // Verificar que el usuario tenga permisos
-    if (req.user.role !== 'admin' && req.user.role !== 'school_admin') {
-      return res.status(403).json({ 
-        message: 'No tienes permisos para generar códigos QR' 
-      });
+  if (!trip) {
+    return res.status(404).json({
+      success: false,
+      message: 'Viaje no encontrado'
+    });
+  }
+
+  // Verificar si ya existe un QR para este viaje
+  let qrCode = await QRCodeModel.findOne({ trip: tripId });
+
+  if (qrCode && !qrCode.isExpired()) {
+    return res.json({
+      success: true,
+      message: 'QR code ya existe para este viaje',
+      data: qrCode
+    });
+  }
+
+  // Generar nuevo código único
+  const code = `TRIP_${trip._id.toString().slice(-8).toUpperCase()}_${Date.now()}`;
+
+  // Generar imagen QR
+  const qrImage = await QRCode.toDataURL(code, {
+    errorCorrectionLevel: 'H',
+    type: 'image/png',
+    quality: 0.95,
+    margin: 1,
+    width: 300
+  });
+
+  // Crear documento QR
+  const newQR = new QRCodeModel({
+    code,
+    trip: tripId,
+    vehicle: trip.vehicle._id,
+    route: trip.route._id,
+    driver: trip.driver || null,
+    qrImage,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 horas
+  });
+
+  await newQR.save();
+
+  res.status(201).json({
+    success: true,
+    message: 'QR generado exitosamente',
+    data: {
+      code: newQR.code,
+      qrImage: newQR.qrImage,
+      expiresAt: newQR.expiresAt,
+      checkinsCount: newQR.getCheckinCount()
     }
-    
-    const student = await Student.findById(studentId);
-    if (!student) {
-      return res.status(404).json({ message: 'Estudiante no encontrado' });
+  });
+});
     }
     
     // Generar código QR único
